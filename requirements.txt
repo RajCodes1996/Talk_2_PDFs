@@ -1,0 +1,10 @@
+streamlit==1.35.0
+sentence-transformers==3.0.1
+PyMuPDF==1.26.7
+numpy==1.26.4
+python-dotenv==1.0.1
+pyttsx3==2.90
+gtts==2.5.1
+pydub==0.25.1
+groq==0.37.1
+faiss-cpu==1.9.0.post1
