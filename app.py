@@ -9,6 +9,8 @@ Run:
 import streamlit as st
 import tempfile
 import os
+import time
+import random
 from dotenv import load_dotenv
 
 from src.pdf_loader import extract_text_from_pdf, get_pdf_metadata
@@ -38,48 +40,89 @@ st.set_page_config(
 # ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    html, body, [class*="css"] { font-size: 18px !important; }
+    /* Clean Blue Accessible Theme */
+    [data-testid="stAppViewContainer"] { background-color: #F0F4F8 !important; color: #102A43 !important; }
+    [data-testid="stSidebar"] { background-color: #E2E8F0 !important; }
+    html, body, [class*="css"] { font-size: 22px !important; color: #102A43 !important; }
 
-    .main-title { font-size: 2.2rem; font-weight: 700; color: #1a1a2e; margin-bottom: 0.2rem; }
-    .subtitle   { font-size: 1.1rem; color: #555; margin-bottom: 1.5rem; }
+    .main-title { font-size: 2.8rem; font-weight: 800; color: #003E6B; margin-bottom: 0.2rem; letter-spacing: 0.5px; }
+    .subtitle   { font-size: 1.3rem; color: #334E68; margin-bottom: 1.5rem; }
 
     .section-header {
-        font-size: 1.3rem; font-weight: 600; color: #16213e;
-        padding: 0.5rem 0; border-bottom: 2px solid #0f3460; margin-bottom: 1rem;
+        font-size: 1.6rem; font-weight: 700; color: #005C9F;
+        padding: 0.5rem 0; border-bottom: 3px solid #005C9F; margin-bottom: 1rem;
     }
     .answer-box {
-        background: #f0f7ff; border-left: 5px solid #0f3460;
-        border-radius: 8px; padding: 1.2rem 1.5rem;
-        font-size: 1.15rem; line-height: 1.9; color: #1a1a2e; margin-top: 0.5rem;
+        background: #FFFFFF; border-left: 6px solid #005C9F;
+        border-radius: 12px; padding: 1.5rem 1.8rem;
+        font-size: 1.3rem; line-height: 1.9; color: #102A43; margin-top: 0.5rem;
+        box-shadow: 0 8px 16px rgba(0,0,0,0.06);
+        position: relative;
+    }
+    .ai-avatar-header {
+        display: flex; align-items: center; margin-bottom: 12px;
+        font-weight: 800; font-size: 1.15rem; color: #005C9F;
+        border-bottom: 1px solid #E2E8F0; padding-bottom: 8px;
+    }
+    .ai-avatar {
+        font-size: 1.8rem; margin-right: 12px;
+        background: #E0E8F5; border-radius: 50%; padding: 8px;
+        display: flex; align-items: center; justify-content: center;
     }
     .summary-box {
-        background: #f8fff8; border-left: 5px solid #2d6a4f;
+        background: #FFFFFF; border-left: 6px solid #003E6B;
         border-radius: 8px; padding: 1.2rem 1.5rem;
-        font-size: 1.1rem; line-height: 1.85; color: #1a1a2e;
+        font-size: 1.25rem; line-height: 1.8; color: #102A43;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
     .confidence-bar {
-        height: 6px; border-radius: 3px; background: #e0e0e0; margin: 4px 0 12px 0;
+        height: 8px; border-radius: 4px; background: #D9E2EC; margin: 6px 0 14px 0;
     }
     .confidence-fill {
-        height: 6px; border-radius: 3px; background: linear-gradient(90deg, #2d6a4f, #52b788);
+        height: 8px; border-radius: 4px; background: linear-gradient(90deg, #1992D4, #005C9F);
     }
     .chunk-card {
-        background: #fafafa; border: 1px solid #e0e0e0;
-        border-radius: 6px; padding: 10px 14px; margin-bottom: 8px;
-        font-size: 0.9rem; color: #444; line-height: 1.6;
+        background: #F8FAFC; border: 1px solid #BCCCDC;
+        border-radius: 8px; margin-bottom: 12px;
+        overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .chunk-header {
+        background: #E2E8F0; padding: 10px 16px;
+        display: flex; justify-content: space-between; align-items: center;
+        border-bottom: 1px solid #BCCCDC;
+    }
+    .chunk-title {
+        font-weight: 700; color: #003E6B; font-size: 1.05rem;
+    }
+    .chunk-relevance {
+        font-size: 0.9rem; color: #005C9F; background: #D9E2EC;
+        padding: 4px 10px; border-radius: 12px; font-weight: 600;
+    }
+    .chunk-text {
+        padding: 14px 16px; font-size: 1.05rem; color: #334E68;
+        line-height: 1.6; background: #FFFFFF;
     }
     .meta-badge {
-        background: #e8f4fd; border-radius: 20px; padding: 4px 14px;
-        font-size: 0.85rem; color: #0f3460; display: inline-block; margin: 2px;
+        background: #E0E8F5; border-radius: 20px; padding: 6px 16px;
+        font-size: 1rem; color: #003E6B; display: inline-block; margin: 4px; border: 1px solid #82CFFF;
     }
     .suggested-q {
-        background: #fff8e1; border: 1px solid #ffe082; border-radius: 6px;
-        padding: 8px 14px; margin: 4px 0; font-size: 0.95rem; color: #5d4037;
+        background: #FFFFFF; border: 2px solid #82CFFF; border-radius: 8px;
+        padding: 10px 16px; margin: 6px 0; font-size: 1.1rem; color: #005C9F;
         cursor: pointer;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    .stButton > button { font-size: 1rem !important; padding: 0.55rem 1.4rem !important; border-radius: 8px !important; }
-    .stTextInput > div > div > input { font-size: 1.1rem !important; }
-    *:focus { outline: 3px solid #f4a261 !important; outline-offset: 2px !important; }
+    .stButton > button { 
+        font-size: 1.2rem !important; padding: 0.7rem 1.5rem !important; 
+        border-radius: 10px !important; font-weight: 700 !important;
+        background-color: #005C9F !important; color: #FFFFFF !important; border: 2px solid #003E6B !important;
+    }
+    .stButton > button:hover {
+        background-color: #003E6B !important; color: #FFFFFF !important;
+        border-color: #003E6B !important;
+    }
+    .stTextInput > div > div > input { font-size: 1.3rem !important; background-color: #FFFFFF !important; color: #102A43 !important; border: 2px solid #005C9F !important; }
+    *:focus { outline: 4px solid #1992D4 !important; outline-offset: 3px !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -96,6 +139,8 @@ def init_state():
         "doc_loaded": False,
         "tts_lang": "en",
         "prefill_question": "",
+        "auto_submit": False,
+        "just_asked": False,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -241,6 +286,7 @@ else:
             with starter_cols[i]:
                 if st.button(sq, key=f"starter_{i}", use_container_width=True):
                     st.session_state.prefill_question = sq
+                    st.session_state.auto_submit = True
                     st.rerun()
 
         st.markdown("---")
@@ -266,7 +312,12 @@ else:
                 st.session_state.chat_history = []
                 st.rerun()
 
-        if ask_btn and question.strip():
+        # Check if we should auto-submit from starter questions
+        auto_submit_trigger = st.session_state.get("auto_submit", False)
+        if auto_submit_trigger:
+            st.session_state.auto_submit = False
+
+        if (ask_btn and question.strip()) or (auto_submit_trigger and question.strip()):
             with st.spinner("🔍 Searching document and generating answer..."):
                 results = st.session_state.vector_store.search(question, top_k=top_k)
 
@@ -282,13 +333,14 @@ else:
                 st.session_state.chat_history.append({"role": "user", "content": question})
                 st.session_state.chat_history.append({"role": "assistant", "content": answer})
                 st.session_state.qa_pairs.insert(0, (question, answer, results, top_score))
+                st.session_state.just_asked = True
 
         # ── Display Q&A history ───────────────────────────────────────────────
         if not st.session_state.qa_pairs:
             st.info("Type a question above or click a suggestion to get started.")
 
-        for q, a, ctx, top_score in st.session_state.qa_pairs:
-            with st.expander(f"❓ {q}", expanded=True):
+        for i, (q, a, ctx, top_score) in enumerate(st.session_state.qa_pairs):
+            with st.expander(f"❓ {q}", expanded=(i==0)):
 
                 # Confidence indicator
                 pct = int(top_score * 100)
@@ -301,11 +353,32 @@ else:
                     unsafe_allow_html=True,
                 )
 
-                # Answer
-                st.markdown(
-                    f"<div class='answer-box'>{a.replace(chr(10), '<br>')}</div>",
-                    unsafe_allow_html=True,
-                )
+                # Answer with typewriter effect for newly generated answers
+                avatar_html = "<div class='ai-avatar-header'><div class='ai-avatar'>🤖</div> AI Assistant</div>"
+                
+                if i == 0 and st.session_state.just_asked:
+                    placeholder = st.empty()
+                    typed_text = ""
+                    # Word-by-word realistic typewriter effect
+                    words = a.split(" ")
+                    for word in words:
+                        typed_text += word + " "
+                        placeholder.markdown(
+                            f"<div class='answer-box'>{avatar_html}<div style='margin-top: 10px;'>{typed_text.replace(chr(10), '<br>')}▌</div></div>", 
+                            unsafe_allow_html=True
+                        )
+                        time.sleep(random.uniform(0.015, 0.05)) # Random delay feels more natural
+                    
+                    placeholder.markdown(
+                        f"<div class='answer-box'>{avatar_html}<div style='margin-top: 10px;'>{a.replace(chr(10), '<br>')}</div></div>", 
+                        unsafe_allow_html=True
+                    )
+                    st.session_state.just_asked = False
+                else:
+                    st.markdown(
+                        f"<div class='answer-box'>{avatar_html}<div style='margin-top: 10px;'>{a.replace(chr(10), '<br>')}</div></div>",
+                        unsafe_allow_html=True,
+                    )
 
                 # Action row
                 act_col1, act_col2 = st.columns([1, 2])
@@ -323,10 +396,11 @@ else:
                         bar_w = int(score * 100)
                         st.markdown(
                             f"<div class='chunk-card'>"
-                            f"<b>Excerpt {i}</b> &nbsp; "
-                            f"<span style='color:#2d6a4f;font-size:0.85rem'>relevance {score:.2f}</span>"
-                            f"<div class='confidence-bar'><div class='confidence-fill' style='width:{bar_w}%'></div></div>"
-                            f"{chunk[:350]}{'...' if len(chunk) > 350 else ''}"
+                            f"<div class='chunk-header'>"
+                            f"<span class='chunk-title'>Excerpt {i}</span>"
+                            f"<span class='chunk-relevance'>Relevance: {score:.2f}</span>"
+                            f"</div>"
+                            f"<div class='chunk-text'>{chunk[:350]}{'...' if len(chunk) > 350 else ''}</div>"
                             f"</div>",
                             unsafe_allow_html=True,
                         )
