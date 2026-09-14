@@ -1,1 +1,3 @@
-The App interface looks boring please choose a solid theme and make it look more realistic. It should match the theme that is: "AIML App For Visual Impaired people". Plus add a typewriter effect in generating reponses and answers !
+### Next Tasks
+1.Implement Langchain and LangGraph
+2. Accelerate indexing speed

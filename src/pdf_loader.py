@@ -112,6 +112,45 @@ def extract_text_from_pdf(path: str) -> str:
     )
 
 
+def extract_text_and_metadata(path: str) -> tuple:
+    """
+    Fast path: extract text AND metadata in a single PyMuPDF pass.
+    Returns (text: str, meta: dict).  Falls back to individual calls if needed.
+    """
+    filename = Path(path).name
+    size_kb = round(os.path.getsize(path) / 1024, 1)
+
+    try:
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
+
+        doc = fitz.open(path)
+        raw_meta = doc.metadata or {}
+        pages_list = [page.get_text("text") for page in doc]
+        page_count = doc.page_count
+        doc.close()
+
+        text = _clean("\n".join(pages_list))
+        if len(text) >= MIN_CHARS:
+            meta = {
+                "filename": filename,
+                "pages": page_count,
+                "size_kb": size_kb,
+                "title": raw_meta.get("title", ""),
+                "author": raw_meta.get("author", ""),
+            }
+            return text, meta
+    except Exception:
+        pass
+
+    # Fallback: separate calls for text + metadata
+    text = extract_text_from_pdf(path)
+    meta = get_pdf_metadata(path)
+    return text, meta
+
+
 def get_pdf_metadata(path: str) -> dict:
     """
     Return basic metadata: filename, page count, file size.

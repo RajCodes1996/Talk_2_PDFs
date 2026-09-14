@@ -9,10 +9,17 @@ import os
 import time
 from dotenv import load_dotenv
 
-from src.pdf_loader import extract_text_from_pdf, get_pdf_metadata
+from src.pdf_loader import extract_text_from_pdf, get_pdf_metadata, extract_text_and_metadata
 from src.chunker import chunk_text
-from src.vector_store import FAISSVectorStore
-from src.llm import summarise_document, answer_question
+from src.vector_store import FAISSVectorStore, _get_model, EMBEDDING_MODEL
+from src.llm import ask, summarise_document, extract_and_remember, reset_session
+
+
+@st.cache_resource(show_spinner=False)
+def _warm_embedding_model():
+    """Load and cache the embedding model once — subsequent uploads are instant."""
+    return _get_model(EMBEDDING_MODEL)
+
 
 try:
     from src.tts import text_to_speech_bytes, SUPPORTED_LANGUAGES
@@ -369,6 +376,9 @@ def init_state():
         if k not in st.session_state:
             st.session_state[k] = v
 
+    # Pre-warm the embedding model on first page load (safe inside Streamlit context)
+    _warm_embedding_model()
+
 
 def confidence_tag(score: float) -> str:
     pct = int(score * 100)
@@ -452,6 +462,7 @@ with st.sidebar:
                         "" if isinstance(st.session_state.get(k), str) else False
                     )
                 )
+            reset_session()  # wipe LangChain conversation memory too
             st.rerun()
 
     if not TTS_AVAILABLE:
@@ -508,11 +519,10 @@ if not st.session_state.doc_loaded:
                         tmp.write(uploaded.read())
                         tmp_path = tmp.name
 
-                    raw_text = extract_text_from_pdf(tmp_path)
-                    meta = get_pdf_metadata(tmp_path)
+                    raw_text, meta = extract_text_and_metadata(tmp_path)
                     os.unlink(tmp_path)
 
-                    chunks = chunk_text(raw_text, chunk_size=500, chunk_overlap=100)
+                    chunks = chunk_text(raw_text, chunk_size=800, chunk_overlap=120)
                     vs = FAISSVectorStore()
                     vs.build(chunks)
 
@@ -520,6 +530,12 @@ if not st.session_state.doc_loaded:
                     st.session_state.vector_store = vs
                     st.session_state.pdf_meta = meta
                     st.session_state.doc_loaded = True
+
+                    # Extract structured facts and save to DocumentMemory (cross-session)
+                    extract_and_remember(raw_text, meta.get("filename", uploaded.name))
+                    # Clear conversation memory so new doc starts fresh
+                    reset_session()
+
                     st.session_state.qa_pairs.append({
                         "role": "assistant",
                         "content": (
@@ -583,17 +599,22 @@ else:
             top_score = results[0][1] if results else 0
 
             lower = prompt.lower()
+            # Sidebar shortcut buttons bypass the graph for speed
             if "summarize this document" in lower:
                 answer = summarise_document(st.session_state.raw_text, mode="standard")
             elif "explain this document simply" in lower:
                 answer = summarise_document(st.session_state.raw_text, mode="simple")
             else:
-                answer = answer_question(
+                # All other questions go through the full LangGraph pipeline:
+                # intent classify → retrieve & grade → memory enrich → generate → self-check
+                answer = ask(
                     question=prompt,
-                    context_chunks=results,
-                    chat_history=st.session_state.chat_history,
+                    chunks=results,
+                    full_text=st.session_state.raw_text,
+                    filename=st.session_state.pdf_meta.get("filename", ""),
                 )
 
+            # chat_history is still kept in session_state for sidebar clear button
             st.session_state.chat_history.append({"role": "assistant", "content": answer})
             typewriter(slot, answer)
 

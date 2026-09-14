@@ -9,8 +9,8 @@ from typing import List
 
 def chunk_text(
     text: str,
-    chunk_size: int = 500,
-    chunk_overlap: int = 100,
+    chunk_size: int = 800,
+    chunk_overlap: int = 120,
 ) -> List[str]:
     """
     Split text into overlapping chunks.
